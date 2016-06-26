@@ -74,7 +74,7 @@ class Course(Base):
     lessons = association_proxy('_lessons', 'lesson')
 
 
-engine = create_engine('sqlite:///declarative_m2m_ordered_list.db')
+engine = create_engine('sqlite:///declarative_m2m_ordered_list.sqlite')
 session = sessionmaker()
 session.configure(bind=engine)
 

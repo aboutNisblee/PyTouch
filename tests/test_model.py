@@ -5,13 +5,14 @@ from pytouch.model import Course, LessonList, Lesson, Profile, Meta, get_engine,
 from pytouch.model.super import Base
 
 
-class TestDbMapper():
+class TestDbMapper(object):
     def __init__(self):
         self.s = None
 
     @classmethod
     def setup_class(cls):
         cls.e = get_engine({'sqlalchemy.url': 'sqlite:///tests.sqlite'})
+        # cls.e = get_engine()
         cls.f = get_session_factory(cls.e)
 
     def setup(self):
@@ -39,7 +40,7 @@ class TestDbMapper():
 
         self.s.commit()
 
-        # Build a list of numbers with the same order we expect the lesson names get db
+        # Build a list of numbers with the same order we expect the lesson names in db
         cmp = [str(i) for i in range(10)]
         cmp.append(cmp.pop(n))
 
@@ -65,9 +66,13 @@ class TestDbMapper():
         uut.lessons = [Lesson(title=i) for i in range(10)]
         self.s.commit()
 
-        self.s.delete(uut.lessons.pop())
+        # Delete the last lesson that is held by Course object
+        self.s.delete(uut.lessons[-1])
         self.s.commit()
 
         eq_(9, self.s.query(Lesson).count())
         eq_(9, self.s.query(LessonList).count())
+        # lessons of uut are expired by commit and updated by unit of work on next access
+        # therefore the we can expect 9 lessons when we access the uut.
+        eq_(9, len(uut.lessons))
         eq_(9, len(self.s.query(Course).one().lessons))

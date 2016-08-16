@@ -25,7 +25,7 @@ configure_mappers()
 
 def get_engine(settings=None, prefix='sqlalchemy.'):
     if settings is None:
-        settings = {'sqlalchemy.url': 'sqlite:///declarative_m2m_ordered_list.sqlite'}
+        settings = {'sqlalchemy.url': 'sqlite:///:memory:'}
     return engine_from_config(settings, prefix)
 
 

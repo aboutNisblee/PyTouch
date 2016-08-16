@@ -15,6 +15,7 @@ class Lesson(Base):
     newChars = Column('cNewChars', String)
     builtin = Column('cLessonBuiltin', Boolean, default=False)
     text = Column('cText', String)
+    course = relationship('LessonList', backref=backref('lesson'), cascade="all, delete-orphan")
 
 
 class LessonList(Base):
@@ -24,7 +25,6 @@ class LessonList(Base):
     courseUuid = Column('fkCourseUuid', String, ForeignKey('tblCourse.pkCourseUuid', onupdate='CASCADE', ondelete='CASCADE'))
     lessonUuid = Column('fkLessonUuid', String, ForeignKey('tblLesson.pkLessonUuid', onupdate='CASCADE', ondelete='CASCADE'))
     position = Column('position', Integer)
-    lesson = relationship(Lesson, backref='course')
 
     def __init__(self, lesson=None, **kw):
         if lesson is not None:

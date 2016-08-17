@@ -1,24 +1,25 @@
 from random import randrange
 
 from nose.tools import eq_
-from pytouch.model import Course, LessonList, Lesson, Profile, Meta, get_engine, get_session_factory
+
+from sqlalchemy import create_engine
+
+from pytouch.model import Session, Course, LessonList, Lesson, Profile, Meta
 from pytouch.model.super import Base
 
 
-class TestDbMapper(object):
+class TestModel(object):
     def __init__(self):
         self.s = None
 
     @classmethod
     def setup_class(cls):
-        cls.e = get_engine({'sqlalchemy.url': 'sqlite:///tests.sqlite'})
-        # cls.e = get_engine()
-        cls.f = get_session_factory(cls.e)
+        cls.e = create_engine('sqlite:///tests.sqlite')
 
     def setup(self):
         Base.metadata.drop_all(self.e)
         Base.metadata.create_all(self.e)
-        self.s = self.f()
+        self.s = Session(bind=self.e)
 
     def teardown(self):
         self.s.close()

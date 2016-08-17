@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import configure_mappers
 from sqlalchemy.engine import Engine
@@ -29,7 +31,21 @@ def get_engine(settings=None, prefix='sqlalchemy.'):
     return engine_from_config(settings, prefix)
 
 
-def get_session_factory(engine):
-    factory = sessionmaker()
-    factory.configure(bind=engine)
-    return factory
+Session = sessionmaker()
+
+
+@contextmanager
+def session_scope(*args, **kwargs):
+    """Provide a transactional scope around a series of operations.
+
+    Additional arguments are passed to session factory making to possible to e.g. changing the engine.
+    """
+    session = Session(*args, **kwargs)
+    try:
+        yield session
+        session.commit()
+    except:
+        session.rollback()
+        raise
+    finally:
+        session.close()

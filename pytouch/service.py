@@ -34,17 +34,17 @@ class CourseService(object):
 
         return course
 
-    @staticmethod
-    def _parse_courses():
-        for filename in CourseService._course_file_names:
-            with resource_stream(CourseService.RESOURCE, filename) as file:
+    @classmethod
+    def _parse_courses(cls):
+        for filename in cls._course_file_names:
+            with resource_stream(cls.RESOURCE, filename) as file:
                 xml = etree.parse(file)
-                if not CourseService._schema.validate(xml):
+                if cls._schema.validate(xml):
+                    logging.debug('Validated file: {}'.format(file.name))
+                    yield cls._parse_course(xml.getroot())
+                else:
                     logging.warning('Unable to validate file: {}'.format(file.name))
                     continue
-                else:
-                    logging.debug('Validated file: {}'.format(file.name))
-                    yield CourseService._parse_course(xml.getroot())
 
     @staticmethod
     def init_courses():

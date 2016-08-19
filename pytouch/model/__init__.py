@@ -1,3 +1,4 @@
+import logging
 from contextlib import contextmanager
 
 from sqlalchemy.orm import sessionmaker
@@ -11,6 +12,7 @@ from sqlalchemy import event
 from pytouch.model.course import Course, LessonList, Lesson
 from pytouch.model.profile import Profile
 from pytouch.model.meta import Meta
+from pytouch.model.super import Base
 
 
 @event.listens_for(Engine, "connect")
@@ -49,3 +51,9 @@ def session_scope(*args, **kwargs):
         raise
     finally:
         session.close()
+
+
+def reset_db(engine=Session().get_bind()):
+    logging.warning('Resetting database')
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)

@@ -1,7 +1,7 @@
 from pkg_resources import resource_stream, resource_listdir
 import logging
 from lxml import etree
-from pytouch.model import session_scope
+from pytouch.model import session_scope, Session
 from pytouch.model.course import Course, Lesson
 
 
@@ -51,3 +51,7 @@ class CourseService(object):
         with session_scope() as session:
             for course in CourseService._parse_courses():
                 session.add(course)
+
+    @staticmethod
+    def find_lesson(uuid):
+        return Session().query(Lesson).filter(Lesson.uuid == uuid).first()

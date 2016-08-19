@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String
-from .super import Base
+from pytouch.model.super import Base
 
 
 class Meta(Base):

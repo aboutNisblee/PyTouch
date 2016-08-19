@@ -4,7 +4,8 @@ from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
 
-from .super import Base
+from pytouch.model.super import Base
+from pytouch.utils import cached_property
 
 
 class Lesson(Base):
@@ -19,6 +20,18 @@ class Lesson(Base):
 
     def __repr__(self):
         return '{self.uuid} -- builtin: {self.builtin!s:>5} -- {self.title}'.format(self=self)
+
+    @cached_property
+    def lines(self):
+        return len(self.text.split('\n'))
+
+    @cached_property
+    def longest_line(self):
+        return max(self.text.split('\n'))
+
+    @cached_property
+    def max_chars(self):
+        return len(self.longest_line)
 
 
 class LessonList(Base):

@@ -8,9 +8,9 @@ from sqlalchemy import event
 
 # import or define all models here to ensure they are attached to the
 # Base.metadata prior to any initialization routines
-from .course import Course, LessonList, Lesson
-from .profile import Profile
-from .meta import Meta
+from pytouch.model.course import Course, LessonList, Lesson
+from pytouch.model.profile import Profile
+from pytouch.model.meta import Meta
 
 
 @event.listens_for(Engine, "connect")

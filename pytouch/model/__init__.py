@@ -53,7 +53,9 @@ def session_scope(*args, **kwargs):
         session.close()
 
 
-def reset_db(engine=Session().get_bind()):
+def reset_db(engine=None):
+    if engine is None:
+        engine = Session().get_bind()
     logging.warning('Resetting database')
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

@@ -1,9 +1,21 @@
 import logging
 
-__all__ = ['Event', 'FeedbackInterface', 'TrainingContext', 'process_event']
+__all__ = [
+    'Event',
+    'TrainingMachineObserver',
+    'TrainingContext',
+    'add_observer',
+    'remove_observer',
+    'process_event',
+    'context_from_lesson',
+]
 
 
 class Event(dict):
+    """ Events that are expected by the process_event function.
+    Use the factory methods to create appropriate events.
+    """
+
     def __init__(self, type, **kwargs):
         super().__init__(type=type, **kwargs)
 
@@ -40,38 +52,31 @@ class Event(dict):
         return cls(type='restart')
 
 
-class FeedbackInterface(object):
-    """ Feedback interface.
+class TrainingMachineObserver(object):
+    """ TrainingMachine observer interface.
 
     A client should implement this interface to get feedback from the machine.
     """
 
-    @staticmethod
-    def pause(ctx):
+    def on_pause(self, ctx):
         raise NotImplementedError
 
-    @staticmethod
-    def unpause(ctx):
+    def on_unpause(self, ctx):
         raise NotImplementedError
 
-    @staticmethod
-    def hit(ctx, pos, char):
+    def on_hit(self, ctx, pos, char):
         raise NotImplementedError
 
-    @staticmethod
-    def miss(ctx, pos, char):
+    def on_miss(self, ctx, pos, char):
         raise NotImplementedError
 
-    @staticmethod
-    def undo(ctx):
+    def on_undo(self, ctx):
         raise NotImplementedError
 
-    @staticmethod
-    def finish(ctx):
+    def on_finish(self, ctx):
         raise NotImplementedError
 
-    @staticmethod
-    def restart(ctx):
+    def on_restart(self, ctx):
         raise NotImplementedError
 
 
@@ -91,44 +96,73 @@ class TrainingContext(object):
         self._input = list()  # Only track all inputs
         self._typos = list()  # List of tuples of position and char
         self._pos = 0
-        self._expect = self._text[self._pos]
+        self._expect = self._text[self._pos] if self._text else None
         self._miss_flag = False  # Not nice
 
-        self._feedback_handlers = []
+        self._observers = []
 
         self.linefeed_mode = linefeed_mode
         self.enforced_correction = enforced_correction
         self.undo_typo = undo_typo
 
-    @classmethod
-    def from_lesson(cls, lesson):
-        return cls(lesson.text)
 
-    def add_observer(self, feedback_handler):
-        if feedback_handler not in self._feedback_handlers:
-            self._feedback_handlers.append(feedback_handler)
+def add_observer(ctx, observer):
+    """ Add an observer to the given context.
 
-    def remove_observer(self, feedback_handler):
-        self._feedback_handlers.remove(feedback_handler)
-
-    def _reset(self):
-        self._state_fn = _state_input
-        self._input = list()
-        self._typos = list()
-        self._pos = 0
-        self._expect = self._text[self._pos]
-        self._miss_flag = False
+    :param ctx: A context.
+    :param observer: An object implementing the :class:`TrainingMachineObserver` interface.
+    """
+    if observer not in ctx._observers:
+        ctx._observers.append(observer)
 
 
-def _feedback(ctx, method, *args, **kwargs):
-    for handler in ctx._feedback_handlers:
-        getattr(handler, method)(ctx, *args, **kwargs)
+def remove_observer(ctx, observer):
+    """ Remove an observer from the given context.
+
+    :param ctx: A context.
+    :param observer: An object implementing the :class:`TrainingMachineObserver` interface.
+    """
+    ctx._observers.remove(observer)
+
+
+def process_event(ctx, event):
+    """ Process external event.
+
+    :param ctx: A :class:`TrainingContext`.
+    :param event: An event.
+    """
+    ctx._state_fn(ctx, event)
+
+
+def context_from_lesson(lesson, *args, **kwargs):
+    """ Create a :class:`TrainingContext` from the given :class:`Lesson`.
+
+    Additional arguments are passed to the context.
+
+    :param lesson: A :class:`Lesson`.
+    :return: An instance of :class:`TrainingContext`.
+    """
+    return TrainingContext(lesson.text, *args, **kwargs)
+
+
+def _notify(ctx, method, *args, **kwargs):
+    for observer in ctx._observers:
+        getattr(observer, method)(ctx, *args, **kwargs)
+
+
+def _reset(ctx):
+    ctx._state_fn = _state_input
+    ctx._input = list()
+    ctx._typos = list()
+    ctx._pos = 0
+    ctx._expect = ctx._text[ctx._pos] if ctx._text else None
+    ctx._miss_flag = False
 
 
 def _state_input(ctx, event):
     if event.type == 'pause':
         ctx._state_fn = _state_pause
-        _feedback(ctx, 'pause')
+        _notify(ctx, 'on_pause')
 
     elif event.type == 'undo':
         if ctx._pos > 0:
@@ -137,11 +171,11 @@ def _state_input(ctx, event):
             # count wrong undos if desired
             if not ctx._miss_flag and ctx.undo_typo:
                 ctx._typos.append((ctx._pos, '<UNDO>'))
-                _feedback(ctx, 'miss', ctx._pos, '<UNDO>')
+                _notify(ctx, 'on_miss', ctx._pos, '<UNDO>')
 
             ctx._pos -= 1
             ctx._expect = ctx._text[ctx._pos]
-            _feedback(ctx, 'undo')
+            _notify(ctx, 'on_undo')
 
     elif event.type == 'input':
         # Record all inputs
@@ -149,7 +183,7 @@ def _state_input(ctx, event):
 
         if event.char == ctx._expect:  # hit
             ctx._miss_flag = False
-            _feedback(ctx, 'hit', ctx._pos, event.char)
+            _notify(ctx, 'on_hit', ctx._pos, event.char)
             ctx._pos += 1
             try:
                 ctx._expect = ctx._text[ctx._pos]
@@ -157,12 +191,12 @@ def _state_input(ctx, event):
                 # Finish!
                 ctx._pos -= 1
                 ctx._state_fn = _state_finish
-                _feedback(ctx, 'finish')
+                _notify(ctx, 'on_finish')
 
         else:  # miss
             ctx._miss_flag = True
             ctx._typos.append((ctx._pos, event.char))
-            _feedback(ctx, 'miss', ctx._pos, event.char)
+            _notify(ctx, 'on_miss', ctx._pos, event.char)
 
             # If correction isn't enforced advance position
             # and expected char but skip win detection.
@@ -177,19 +211,10 @@ def _state_input(ctx, event):
 def _state_pause(ctx, event):
     if event.type == 'unpause':
         ctx._state_fn = _state_input
-        _feedback(ctx, 'unpause')
+        _notify(ctx, 'on_unpause')
 
 
 def _state_finish(ctx, event):
     if event.type == 'restart':
-        ctx._reset()
-        _feedback(ctx, 'restart')
-
-
-def process_event(ctx, event):
-    """ Process external event.
-
-    :param ctx: The machine context.
-    :param event: The event.
-    """
-    ctx._state_fn(ctx, event)
+        _reset(ctx)
+        _notify(ctx, 'on_restart')

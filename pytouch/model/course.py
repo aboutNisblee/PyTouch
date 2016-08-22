@@ -1,4 +1,6 @@
 import uuid
+from operator import add
+
 from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship, backref
@@ -23,14 +25,34 @@ class Lesson(Base):
 
     @cached_property
     def lines(self):
-        return len(self.text.split('\n'))
+        return self.text.split('\n')
+
+    @cached_property
+    def index_list(self):
+        line = 0
+        column = 0
+        rv = list()
+        for c in list(self.text):
+            rv.append((line, column))
+            column += 1
+            if c == '\n':
+                line += 1
+                column = 0
+        return rv
+
+    def position(self, index, offset=(0, 0)):
+        return tuple(map(add, list(offset), list(self.index_list[index])))
+
+    @cached_property
+    def line_count(self):
+        return len(self.lines)
 
     @cached_property
     def longest_line(self):
-        return max(self.text.split('\n'))
+        return max(self.lines)
 
     @cached_property
-    def max_chars(self):
+    def longest_line_len(self):
         return len(self.longest_line)
 
 

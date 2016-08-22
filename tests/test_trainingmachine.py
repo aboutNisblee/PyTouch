@@ -29,7 +29,7 @@ class TestTrainingMachine(object):
     def test_hit(self):
         process_event(self.ctx, Event.input_event(TEXT[0]))
         eq_(self.ctx._state_fn, _state_input)
-        eq_(self.ctx._pos, 1)
+        eq_(self.ctx._index, 1)
         eq_(self.ctx._expect, TEXT[1])
         eq_(self.ctx._input, [(0, TEXT[0])])
         eq_(self.ctx._typos, [])
@@ -39,66 +39,67 @@ class TestTrainingMachine(object):
         self.ctx.enforced_correction = False
         process_event(self.ctx, Event.input_event(TEXT[1]))  # miss
         process_event(self.ctx, Event.input_event(TEXT[0]))  # miss
-        eq_(self.ctx._pos, 2)
+        eq_(self.ctx._index, 2)
         eq_(self.ctx._expect, TEXT[2])
         eq_(self.ctx._input, [(0, TEXT[1]), (1, TEXT[0])])
         eq_(self.ctx._typos, [(0, TEXT[1]), (1, TEXT[0])])
-        self.feedback_mock.assert_has_calls([call.on_miss(self.ctx, 0, TEXT[1]), call.on_miss(self.ctx, 1, TEXT[0])])
+        self.feedback_mock.assert_has_calls([call.on_miss(self.ctx, 0, TEXT[1], TEXT[0]), call.on_miss(self.ctx, 1, TEXT[0], TEXT[1])])
 
     def test_miss_undo_enforced(self):
         self.ctx.enforced_correction = True
         process_event(self.ctx, Event.input_event(TEXT[1]))  # miss
         process_event(self.ctx, Event.input_event(TEXT[1]))  # miss
-        eq_(self.ctx._pos, 0)
+        eq_(self.ctx._index, 0)
         eq_(self.ctx._expect, TEXT[0])
         eq_(self.ctx._input, [(0, TEXT[1]), (0, TEXT[1])])
         eq_(self.ctx._typos, [(0, TEXT[1]), (0, TEXT[1])])
-        self.feedback_mock.assert_has_calls([call.on_miss(self.ctx, 0, TEXT[1]), call.on_miss(self.ctx, 0, TEXT[1])])
+        self.feedback_mock.assert_has_calls([call.on_miss(self.ctx, 0, TEXT[1], TEXT[0]), call.on_miss(self.ctx, 0, TEXT[1], TEXT[0])])
 
     def test_undo_miss(self):
         process_event(self.ctx, Event.input_event(TEXT[0]))  # hit
         process_event(self.ctx, Event.input_event(TEXT[2]))  # miss
         process_event(self.ctx, Event.undo_event())
-        eq_(self.ctx._pos, 1)
+        eq_(self.ctx._index, 1)
         eq_(self.ctx._expect, TEXT[1])
         eq_(self.ctx._input, [(0, TEXT[0]), (1, TEXT[2]), (2, '<UNDO>')])
         eq_(self.ctx._typos, [(1, TEXT[2])])
-        self.feedback_mock.assert_has_calls([call.on_undo(self.ctx)])
+        self.feedback_mock.assert_has_calls([call.on_undo(self.ctx, 1, TEXT[1])])
 
     def test_undo_hit(self):
         process_event(self.ctx, Event.input_event(TEXT[0]))  # hit
         process_event(self.ctx, Event.undo_event())
-        eq_(self.ctx._pos, 0)
+        eq_(self.ctx._index, 0)
         eq_(self.ctx._expect, TEXT[0])
         eq_(self.ctx._input, [(0, TEXT[0]), (1, '<UNDO>')])
         eq_(self.ctx._typos, [])
-        self.feedback_mock.assert_has_calls([call.on_undo(self.ctx)])
+        self.feedback_mock.assert_has_calls([call.on_undo(self.ctx, 0, TEXT[0])])
 
     def test_undo_hit_undo_typo_enabled(self):
         self.ctx.undo_typo = True  # An undo of a hit should count as typo/miss
         process_event(self.ctx, Event.input_event(TEXT[0]))  # hit
         process_event(self.ctx, Event.undo_event())
-        eq_(self.ctx._pos, 0)
+        eq_(self.ctx._index, 0)
         eq_(self.ctx._expect, TEXT[0])
         eq_(self.ctx._input, [(0, TEXT[0]), (1, '<UNDO>')])
         eq_(self.ctx._typos, [(1, '<UNDO>')])
-        self.feedback_mock.assert_has_calls([call.on_miss(self.ctx, 1, '<UNDO>'), call.on_undo(self.ctx)])
+        self.feedback_mock.assert_has_calls([call.on_miss(self.ctx, 1, '<UNDO>', TEXT[1]), call.on_undo(self.ctx, 0, TEXT[0])])
 
     def test_undo_fail_at_start(self):
         process_event(self.ctx, Event.undo_event())
-        eq_(self.ctx._pos, 0)
+        eq_(self.ctx._index, 0)
         eq_(self.ctx._expect, TEXT[0])
         eq_(self.ctx._input, [])
         eq_(self.ctx._typos, [])
         self.feedback_mock.assert_not_called()
 
     def test_finish(self):
-        for char in TEXT:
+        text = TEXT + '\n'
+        for char in text:
             process_event(self.ctx, Event.input_event(char))
         eq_(self.ctx._state_fn, _state_finish)
-        eq_(self.ctx._pos, len(TEXT) - 1)
-        eq_(self.ctx._expect, TEXT[-1])
-        eq_(self.ctx._input, list(enumerate(TEXT)))
+        eq_(self.ctx._index, len(text) - 1)
+        eq_(self.ctx._expect, text[-1])
+        eq_(self.ctx._input, list(enumerate(text)))
         eq_(self.ctx._typos, [])
         self.feedback_mock.assert_has_calls([call.on_finish(self.ctx)])
 
@@ -106,14 +107,25 @@ class TestTrainingMachine(object):
         self.ctx = TrainingContext('')
         add_observer(self.ctx, self.feedback_mock)
 
-        process_event(self.ctx, Event.input_event(TEXT[0]))
+        process_event(self.ctx, Event.input_event(TEXT[0]))  # miss
         eq_(self.ctx._state_fn, _state_input)
-        eq_(self.ctx._pos, 0)
-        eq_(self.ctx._expect, None)
+        eq_(self.ctx._index, 0)
+        eq_(self.ctx._expect, '\n')
         eq_(self.ctx._input, [(0, TEXT[0])])
-        eq_(self.ctx._typos, [(0, TEXT[0])])
-        self.feedback_mock.assert_has_calls([call.on_miss(self.ctx, 0, TEXT[0])])
+        eq_(self.ctx._typos, [])  # no typos on expected NLs
+        self.feedback_mock.assert_not_called()
 
+    def test_newline(self):
+        self.ctx = TrainingContext('\n')
+        add_observer(self.ctx, self.feedback_mock)
+
+        process_event(self.ctx, Event.input_event('A'))
+        eq_(self.ctx._state_fn, _state_input)
+        eq_(self.ctx._index, 0)
+        eq_(self.ctx._expect, '\n')
+        eq_(self.ctx._input, [(0, 'A')])
+        eq_(self.ctx._typos, [])
+        self.feedback_mock.assert_not_called()
 
 # def test_space(self):
 # def test_linefeed(self):

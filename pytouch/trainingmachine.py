@@ -8,6 +8,8 @@ __all__ = [
     'remove_observer',
     'process_event',
     'context_from_lesson',
+    'is_paused',
+    'is_running',
 ]
 
 
@@ -43,9 +45,9 @@ class Event(dict):
     def unpause_event(cls):
         return cls(type='unpause')
 
-    @classmethod
-    def exit_event(cls):
-        return cls(type='exit')
+    # @classmethod
+    # def exit_event(cls):
+    #     return cls(type='exit')
 
     @classmethod
     def restart_event(cls):
@@ -64,13 +66,13 @@ class TrainingMachineObserver(object):
     def on_unpause(self, ctx):
         raise NotImplementedError
 
-    def on_hit(self, ctx, pos, char):
+    def on_hit(self, ctx, index, typed):
         raise NotImplementedError
 
-    def on_miss(self, ctx, pos, char):
+    def on_miss(self, ctx, index, typed, expected):
         raise NotImplementedError
 
-    def on_undo(self, ctx):
+    def on_undo(self, ctx, index, expect):
         raise NotImplementedError
 
     def on_finish(self, ctx):
@@ -92,11 +94,11 @@ class TrainingContext(object):
         :param undo_typo: If enabled wrong undos count as typos.
         """
         self._state_fn = _state_input
-        self._text = list(text)
+        self._text = list(text) if text.endswith('\n') else list(text + '\n')
         self._input = list()  # Only track all inputs
         self._typos = list()  # List of tuples of position and char
-        self._pos = 0
-        self._expect = self._text[self._pos] if self._text else None
+        self._index = 0
+        self._expect = self._text[self._index] if self._text else None
         self._miss_flag = False  # Not nice
 
         self._observers = []
@@ -145,6 +147,18 @@ def context_from_lesson(lesson, *args, **kwargs):
     return TrainingContext(lesson.text, *args, **kwargs)
 
 
+def is_paused(ctx):
+    return ctx._state_fn is _state_pause
+
+
+def is_running(ctx):
+    return not is_paused(ctx) and ctx._state_fn is not _state_finish
+
+
+def is_miss(ctx):
+    return ctx._miss_flag
+
+
 def _notify(ctx, method, *args, **kwargs):
     for observer in ctx._observers:
         getattr(observer, method)(ctx, *args, **kwargs)
@@ -154,8 +168,8 @@ def _reset(ctx):
     ctx._state_fn = _state_input
     ctx._input = list()
     ctx._typos = list()
-    ctx._pos = 0
-    ctx._expect = ctx._text[ctx._pos] if ctx._text else None
+    ctx._index = 0
+    ctx._expect = ctx._text[ctx._index] if ctx._text else None
     ctx._miss_flag = False
 
 
@@ -165,47 +179,54 @@ def _state_input(ctx, event):
         _notify(ctx, 'on_pause')
 
     elif event.type == 'undo':
-        if ctx._pos > 0:
-            ctx._input.append((ctx._pos, '<UNDO>'))
+        if ctx._index > 0:
+            ctx._input.append((ctx._index, '<UNDO>'))
 
             # count wrong undos if desired
             if not ctx._miss_flag and ctx.undo_typo:
-                ctx._typos.append((ctx._pos, '<UNDO>'))
-                _notify(ctx, 'on_miss', ctx._pos, '<UNDO>')
+                ctx._typos.append((ctx._index, '<UNDO>'))
+                _notify(ctx, 'on_miss', ctx._index, '<UNDO>', ctx._expect)
 
-            ctx._pos -= 1
-            ctx._expect = ctx._text[ctx._pos]
-            _notify(ctx, 'on_undo')
+            ctx._index -= 1
+            ctx._expect = ctx._text[ctx._index]
+            _notify(ctx, 'on_undo', ctx._index, ctx._expect)
 
     elif event.type == 'input':
         # Record all inputs
-        ctx._input.append((ctx._pos, event.char))
+        ctx._input.append((ctx._index, event.char))
 
         if event.char == ctx._expect:  # hit
             ctx._miss_flag = False
-            _notify(ctx, 'on_hit', ctx._pos, event.char)
-            ctx._pos += 1
+            _notify(ctx, 'on_hit', ctx._index, event.char)
+            ctx._index += 1
             try:
-                ctx._expect = ctx._text[ctx._pos]
+                ctx._expect = ctx._text[ctx._index]
             except IndexError:
                 # Finish!
-                ctx._pos -= 1
+                ctx._index -= 1
                 ctx._state_fn = _state_finish
                 _notify(ctx, 'on_finish')
 
         else:  # miss
+            if ctx._expect == '\n':  # misses at line ending
+                return  # TODO: Make misses on line ending configurable
+
+            if event.char == '\n':  # Return hits in line
+                # TODO: Make misses on wrong returns configurable
+                return
+
             ctx._miss_flag = True
-            ctx._typos.append((ctx._pos, event.char))
-            _notify(ctx, 'on_miss', ctx._pos, event.char)
+            ctx._typos.append((ctx._index, event.char))
+            _notify(ctx, 'on_miss', ctx._index, event.char, ctx._expect)
 
             # If correction isn't enforced advance position
             # and expected char but skip win detection.
             if not ctx.enforced_correction:
-                ctx._pos += 1
+                ctx._index += 1
                 try:
-                    ctx._expect = ctx._text[ctx._pos]
+                    ctx._expect = ctx._text[ctx._index]
                 except IndexError:
-                    ctx._pos -= 1
+                    ctx._index -= 1
 
 
 def _state_pause(ctx, event):

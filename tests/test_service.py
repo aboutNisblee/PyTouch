@@ -22,10 +22,10 @@ class TestService(CourseService):
         eq_(tc.lessons[0].title, 'TestLesson1')
         eq_(tc.lessons[0].new_chars, 'fj')
         eq_(tc.lessons[0].builtin, True)
-        eq_(tc.lessons[0].text, 'fff jjj')
+        eq_(tc.lessons[0].text, 'fff jjj\njjj fff')
 
         eq_(tc.lessons[1].uuid, '{e169c06b-71be-46df-97cf-8b3e68c5f75d}')
         eq_(tc.lessons[1].title, 'TestLesson2')
         eq_(tc.lessons[1].new_chars, 'dk')
         eq_(tc.lessons[1].builtin, True)
-        eq_(tc.lessons[1].text, 'ddd kkk')
+        eq_(tc.lessons[1].text, 'ddd kkk\nkkk ddd')

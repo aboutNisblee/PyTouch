@@ -9,13 +9,15 @@
    <id>{d6e5a9a9-3c31-4175-8d58-245695c60b08}</id>
    <title>TestLesson1</title>
    <newCharacters>fj</newCharacters>
-   <text>fff jjj</text>
+   <text>fff jjj
+jjj fff</text>
   </lesson>
   <lesson>
    <id>{e169c06b-71be-46df-97cf-8b3e68c5f75d}</id>
    <title>TestLesson2</title>
    <newCharacters>dk</newCharacters>
-   <text>ddd kkk</text>
+   <text>ddd kkk
+kkk ddd</text>
   </lesson>
  </lessons>
 </course>

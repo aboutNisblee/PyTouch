@@ -60,7 +60,7 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         # self.sb.grid(column=1, row=1, sticky=N + E + S + W)
 
     def load_lesson(self, lesson):
-        self.ctx = tm.context_from_lesson(lesson, enforced_correction=False)
+        self.ctx = tm.TrainingContext.from_lesson(lesson)
         tm.add_observer(self.ctx, self)
 
         self.insert(index='1.0', chars=lesson.text)
@@ -76,6 +76,11 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
 
         self.focus_set()
         self.update_font_size(self.cget('width'))
+
+    @property
+    def idx(self):
+        chars = self.count('1.0', INSERT, 'chars')
+        return chars[0] if chars else 0
 
     def replace_char(self, index, char, tags):
         """ Replace a char at the given text index. """
@@ -123,18 +128,14 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         """ Produce an undo TrainingMachine event on BackSpace. """
         if tm.is_paused(self.ctx):
             tm.process_event(self.ctx, tm.Event.unpause_event())
-        tm.process_event(self.ctx, tm.Event.undo_event())
+        tm.process_event(self.ctx, tm.Event.undo_event(self.idx))
+
         self.see(INSERT)
         return 'break'
 
-    def advance_allowed(self):
-        # FIXME: CRAP!
-        return not (self.ctx.enforced_correction and tm.is_miss(self.ctx))
-
-    def insert2index(self):
-        # TODO: It should be much easier to pass the current index into the machine than tracking
-        # the index separately inside the machine!
-        logging.debug(self.count('1.0', INSERT, 'chars'))
+    # def advance_allowed(self):
+    #     # FIXME: CRAP!
+    #     return not (self.ctx.enforced_correction and tm.is_miss(self.ctx))
 
     def on_key_press(self, event):
         """ Catch all key events. """
@@ -145,22 +146,17 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         if event.keysym == 'Return':
             event.char = '\n'
 
-        self.insert2index()
-
         if tm.is_paused(self.ctx):
             tm.process_event(self.ctx, tm.Event.unpause_event())
-        if self.advance_allowed() and event.char and event.keysym not in FILTERED_KEYS:
-            tm.process_event(self.ctx, tm.Event.input_event(event.char))
+        if event.char and event.keysym not in FILTERED_KEYS:
+            tm.process_event(self.ctx, tm.Event.input_event(self.idx, event.char))
+
         self.see(INSERT)
-
-        self.insert2index()
-
         return 'break'
 
     def on_hit(self, ctx, index, typed):
         """ TrainingMachine hit handler. """
         logger.debug('on_hit: insert {!r} at {}'.format(typed, index))
-        # TODO: No need to replace! Changing the tags should be sufficient.
         self.replace_char(index, typed, ('base', 'hit'))
 
     def on_miss(self, ctx, index, typed, expected):
@@ -192,7 +188,7 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         """ TrainingMachine restart handler. """
         logger.debug('on_restart: ...')
 
-    def on_finish(self, ctx):
-        """ TrainingMachine finish handler. """
-        logger.debug('on_finish: Yeehaa!')
+    def on_end(self, ctx):
+        """ TrainingMachine end handler. """
+        logger.debug('on_end: End reached')
         self.configure(state='disabled')

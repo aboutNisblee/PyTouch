@@ -7,7 +7,6 @@ __all__ = [
     'add_observer',
     'remove_observer',
     'process_event',
-    'context_from_lesson',
     'is_paused',
     'is_running',
 ]
@@ -26,16 +25,23 @@ class Event(dict):
         return self['type']
 
     @property
+    def index(self):
+        return self.get('index')
+
+    @property
     def char(self):
         return self.get('char')
 
     @classmethod
-    def input_event(cls, char):
-        return cls(type='input', char=char)
+    def input_event(cls, index, char):
+        return cls(type='input', index=index, char=char)
 
     @classmethod
-    def undo_event(cls):
-        return cls(type='undo')
+    def undo_event(cls, index):
+        """ Create an undo event.
+        :param index: The index right of the char that should be reverted.
+        """
+        return cls(type='undo', index=index)
 
     @classmethod
     def pause_event(cls):
@@ -44,10 +50,6 @@ class Event(dict):
     @classmethod
     def unpause_event(cls):
         return cls(type='unpause')
-
-    # @classmethod
-    # def exit_event(cls):
-    #     return cls(type='exit')
 
     @classmethod
     def restart_event(cls):
@@ -73,39 +75,88 @@ class TrainingMachineObserver(object):
         raise NotImplementedError
 
     def on_undo(self, ctx, index, expect):
+        """ Called after a successful undo event.
+        :param ctx: The context.
+        :param index: The index that should be replaced by the expect argument.
+        :param expect: The expected character.
+        """
         raise NotImplementedError
 
-    def on_finish(self, ctx):
+    def on_end(self, ctx):
         raise NotImplementedError
 
     def on_restart(self, ctx):
         raise NotImplementedError
 
 
+class Char(object):
+    def __init__(self, idx, char, undo_typo):
+        self._idx = idx
+        self._char = char
+        self._input = list()
+        self._undo_typo = undo_typo
+
+    @property
+    def index(self):
+        return self._idx
+
+    @property
+    def char(self):
+        return self._char
+
+    @property
+    def hit(self):
+        return self._input[-1] == self._char if self._input else False
+
+    @property
+    def miss(self):
+        return not self.hit
+
+    @property
+    def input(self):
+        return self._input
+
+    @property
+    def typos(self):
+        return [c for c in self._input if (c != '<UNDO>' and c != self._char) or (c == '<UNDO>' and self._undo_typo)]
+
+        # def add(self, char):
+        #     self._input.append(char)
+        #     return char == self._char
+
+
 class TrainingContext(object):
-    def __init__(self, text, linefeed_mode='normal', enforced_correction=False, undo_typo=False):
+    def __init__(self, text, undo_typo=False):
         """ Training machine context.
 
         A client should never manipulate internal attributes on its instance.
 
         :param text: The lesson text.
-        :param linefeed_mode: 'normal': Return expected. 'space': Space expected. 'skip': Nothing expected.
-        :param enforced_correction: If enabled corrections are enforced. (No further typing after typos)
         :param undo_typo: If enabled wrong undos count as typos.
         """
+
+        # Ensure the text ends with NL
+        if not text.endswith('\n'):
+            text += '\n'
+
         self._state_fn = _state_input
-        self._text = list(text) if text.endswith('\n') else list(text + '\n')
-        self._input = list()  # Only track all inputs
-        self._typos = list()  # List of tuples of position and char
-        self._index = 0
-        self._expect = self._text[self._index] if self._text else None
-        self._miss_flag = False  # Not nice
-
+        self._text = [Char(i, c, undo_typo) for i, c in enumerate(text)]
         self._observers = []
-
-        self.linefeed_mode = linefeed_mode
-        self.enforced_correction = enforced_correction
         self.undo_typo = undo_typo
+
+    @classmethod
+    def from_lesson(cls, lesson, *args, **kwargs):
+        """ Create a :class:`TrainingContext` from the given :class:`Lesson`.
+
+        Additional arguments are passed to the context.
+
+        :param lesson: A :class:`Lesson`.
+        :return: An instance of :class:`TrainingContext`.
+        """
+        return cls(lesson.text, *args, **kwargs)
+
+    def __getitem__(self, idx):
+        return self._text[idx]
 
 
 def add_observer(ctx, observer):
@@ -136,27 +187,12 @@ def process_event(ctx, event):
     ctx._state_fn(ctx, event)
 
 
-def context_from_lesson(lesson, *args, **kwargs):
-    """ Create a :class:`TrainingContext` from the given :class:`Lesson`.
-
-    Additional arguments are passed to the context.
-
-    :param lesson: A :class:`Lesson`.
-    :return: An instance of :class:`TrainingContext`.
-    """
-    return TrainingContext(lesson.text, *args, **kwargs)
-
-
 def is_paused(ctx):
     return ctx._state_fn is _state_pause
 
 
 def is_running(ctx):
-    return not is_paused(ctx) and ctx._state_fn is not _state_finish
-
-
-def is_miss(ctx):
-    return ctx._miss_flag
+    return not is_paused(ctx) and ctx._state_fn is not _state_end
 
 
 def _notify(ctx, method, *args, **kwargs):
@@ -166,11 +202,8 @@ def _notify(ctx, method, *args, **kwargs):
 
 def _reset(ctx):
     ctx._state_fn = _state_input
-    ctx._input = list()
-    ctx._typos = list()
-    ctx._index = 0
-    ctx._expect = ctx._text[ctx._index] if ctx._text else None
-    ctx._miss_flag = False
+    for c in ctx._text:
+        c.input.clear()
 
 
 def _state_input(ctx, event):
@@ -179,54 +212,35 @@ def _state_input(ctx, event):
         _notify(ctx, 'on_pause')
 
     elif event.type == 'undo':
-        if ctx._index > 0:
-            ctx._input.append((ctx._index, '<UNDO>'))
+        if event.index > 0:
+            ctx[event.index - 1].input.append('<UNDO>')
 
-            # count wrong undos if desired
-            if not ctx._miss_flag and ctx.undo_typo:
-                ctx._typos.append((ctx._index, '<UNDO>'))
-                _notify(ctx, 'on_miss', ctx._index, '<UNDO>', ctx._expect)
+            # report wrong undos if desired
+            if ctx.undo_typo:
+                _notify(ctx, 'on_miss', event.index - 1, '<UNDO>', ctx[event.index - 1].char)
 
-            ctx._index -= 1
-            ctx._expect = ctx._text[ctx._index]
-            _notify(ctx, 'on_undo', ctx._index, ctx._expect)
+            _notify(ctx, 'on_undo', event.index - 1, ctx[event.index - 1].char)
 
     elif event.type == 'input':
-        # Record all inputs
-        ctx._input.append((ctx._index, event.char))
+        # Note that this may produce an IndexError. Let it happen! It's a bug in the caller.
+        if ctx[event.index].char == event.char:  # hit
+            ctx[event.index].input.append(event.char)
+            _notify(ctx, 'on_hit', event.index, event.char)
 
-        if event.char == ctx._expect:  # hit
-            ctx._miss_flag = False
-            _notify(ctx, 'on_hit', ctx._index, event.char)
-            ctx._index += 1
-            try:
-                ctx._expect = ctx._text[ctx._index]
-            except IndexError:
-                # Finish!
-                ctx._index -= 1
-                ctx._state_fn = _state_finish
-                _notify(ctx, 'on_finish')
+            if event.index == ctx[-1].index:
+                ctx._state_fn = _state_end
+                _notify(ctx, 'on_end')
 
         else:  # miss
-            if ctx._expect == '\n':  # misses at line ending
+            if ctx[event.index].char == '\n':  # misses at line ending
                 return  # TODO: Make misses on line ending configurable
 
-            if event.char == '\n':  # Return hits in line
+            if event.char == '\n':  # 'Return' hits in line
                 # TODO: Make misses on wrong returns configurable
                 return
 
-            ctx._miss_flag = True
-            ctx._typos.append((ctx._index, event.char))
-            _notify(ctx, 'on_miss', ctx._index, event.char, ctx._expect)
-
-            # If correction isn't enforced advance position
-            # and expected char but skip win detection.
-            if not ctx.enforced_correction:
-                ctx._index += 1
-                try:
-                    ctx._expect = ctx._text[ctx._index]
-                except IndexError:
-                    ctx._index -= 1
+            ctx[event.index].input.append(event.char)
+            _notify(ctx, 'on_miss', event.index, event.char, ctx[event.index].char)
 
 
 def _state_pause(ctx, event):
@@ -235,7 +249,7 @@ def _state_pause(ctx, event):
         _notify(ctx, 'on_unpause')
 
 
-def _state_finish(ctx, event):
+def _state_end(ctx, event):
     if event.type == 'restart':
         _reset(ctx)
         _notify(ctx, 'on_restart')

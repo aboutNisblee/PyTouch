@@ -1,0 +1,2 @@
+include README* LICENSE .gitignore
+recursive-include tests test_*.py run.py

@@ -1,0 +1,23 @@
+﻿<?xml version="1.0"?>
+<course>
+ <id>{4e007d5e-613a-4a26-bff3-658d44d9cf10}</id>
+ <title>TestCourse</title>
+ <description>This file is only for testing purposes and will be filtered by application.</description>
+ <keyboardLayout>de</keyboardLayout>
+ <lessons>
+  <lesson>
+   <id>{d6e5a9a9-3c31-4175-8d58-245695c60b08}</id>
+   <title>TestLesson1</title>
+   <newCharacters>fj</newCharacters>
+   <text>fff jjj
+jjj fff</text>
+  </lesson>
+  <lesson>
+   <id>{e169c06b-71be-46df-97cf-8b3e68c5f75d}</id>
+   <title>TestLesson2</title>
+   <newCharacters>dk</newCharacters>
+   <text>ddd kkk
+kkk ddd</text>
+  </lesson>
+ </lessons>
+</course>

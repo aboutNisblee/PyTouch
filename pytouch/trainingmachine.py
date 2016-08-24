@@ -1,4 +1,5 @@
 import logging
+import datetime
 
 __all__ = [
     'Event',
@@ -9,7 +10,10 @@ __all__ = [
     'process_event',
     'is_paused',
     'is_running',
+    'runtime',
 ]
+
+logger = logging.getLogger(__name__)
 
 
 class Event(dict):
@@ -106,7 +110,7 @@ class Char(object):
 
     @property
     def hit(self):
-        return self._input[-1] == self._char if self._input else False
+        return self._input[-1][0] == self._char if self._input else False
 
     @property
     def miss(self):
@@ -118,11 +122,18 @@ class Char(object):
 
     @property
     def typos(self):
-        return [c for c in self._input if (c != '<UNDO>' and c != self._char) or (c == '<UNDO>' and self._undo_typo)]
+        return [i for i in self._input if (i[0] != '<UNDO>' and i[0] != self._char) or (i[0] == '<UNDO>' and self._undo_typo)]
 
-        # def add(self, char):
-        #     self._input.append(char)
-        #     return char == self._char
+    def append(self, char, time=None):
+        time = datetime.datetime.utcnow() if time is None else time
+        self._input.append((char, time))
+
+    def __getitem__(self, item):
+        return self._input[item][0]
+
+    def __iter__(self):
+        for input in self._input:
+            yield input
 
 
 class TrainingContext(object):
@@ -141,6 +152,7 @@ class TrainingContext(object):
 
         self._state_fn = _state_input
         self._text = [Char(i, c, undo_typo) for i, c in enumerate(text)]
+        self._pause = list()
         self._observers = []
         self.undo_typo = undo_typo
 
@@ -157,6 +169,10 @@ class TrainingContext(object):
 
     def __getitem__(self, idx):
         return self._text[idx]
+
+    def __iter__(self):
+        for char in self._text:
+            yield char
 
 
 def add_observer(ctx, observer):
@@ -195,6 +211,33 @@ def is_running(ctx):
     return not is_paused(ctx) and ctx._state_fn is not _state_end
 
 
+def _inputs(ctx):
+    for char in ctx:
+        for input in char:
+            yield input
+
+
+def runtime(ctx):
+    """ Get the overall runtime.
+
+    Only ended pauses are subtracted from the overall input time.
+
+    :param ctx: A :class:`TrainingContext`
+    :return: The runtime as :class:`datetime.timedelta`
+    """
+
+    # Sort all inputs by input time
+    inputs = sorted(_inputs(ctx), key=lambda char: char[1])
+    if not inputs:
+        return datetime.timedelta(0)
+    overall = inputs[-1][1] - inputs[0][1]
+    # Subtract the sum of all ended pauses
+    pause = sum((p[1] - p[0] for p in ctx._pause if p[1]), datetime.timedelta(0))
+    rv = overall - pause
+    logger.debug('runtime: overall {} pause {} runtime {}'.format(overall, pause, rv))
+    return rv
+
+
 def _notify(ctx, method, *args, **kwargs):
     for observer in ctx._observers:
         getattr(observer, method)(ctx, *args, **kwargs)
@@ -202,18 +245,19 @@ def _notify(ctx, method, *args, **kwargs):
 
 def _reset(ctx):
     ctx._state_fn = _state_input
-    for c in ctx._text:
-        c.input.clear()
+    for char in ctx:
+        char.input.clear()
 
 
 def _state_input(ctx, event):
     if event.type == 'pause':
         ctx._state_fn = _state_pause
+        ctx._pause.append((datetime.datetime.utcnow(), None))
         _notify(ctx, 'on_pause')
 
     elif event.type == 'undo':
         if event.index > 0:
-            ctx[event.index - 1].input.append('<UNDO>')
+            ctx[event.index - 1].append('<UNDO>')
 
             # report wrong undos if desired
             if ctx.undo_typo:
@@ -224,7 +268,7 @@ def _state_input(ctx, event):
     elif event.type == 'input':
         # Note that this may produce an IndexError. Let it happen! It's a bug in the caller.
         if ctx[event.index].char == event.char:  # hit
-            ctx[event.index].input.append(event.char)
+            ctx[event.index].append(event.char)
             _notify(ctx, 'on_hit', event.index, event.char)
 
             if event.index == ctx[-1].index:
@@ -239,13 +283,17 @@ def _state_input(ctx, event):
                 # TODO: Make misses on wrong returns configurable
                 return
 
-            ctx[event.index].input.append(event.char)
+            ctx[event.index].append(event.char)
             _notify(ctx, 'on_miss', event.index, event.char, ctx[event.index].char)
 
 
 def _state_pause(ctx, event):
     if event.type == 'unpause':
         ctx._state_fn = _state_input
+        # Check for logical error
+        if ctx._pause and ctx._pause[-1][1] is not None:
+            logger.error('Unpause event without preceding pause event')
+        ctx._pause[-1] = (ctx._pause[-1][0], datetime.datetime.utcnow())
         _notify(ctx, 'on_unpause')
 
 

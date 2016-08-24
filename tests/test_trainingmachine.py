@@ -1,11 +1,19 @@
 from unittest.mock import MagicMock, call
 
-from nose.tools import eq_, assert_raises
+from nose.tools import eq_, assert_raises, assert_list_equal
 
 from pytouch.trainingmachine import *
 from pytouch.trainingmachine import _state_pause, _state_input, _state_end
 
 TEXT = 'f j\nf'
+
+
+def check_char_list(list, expect):
+    if not list:
+        eq_(list, expect)
+    else:
+        for i, char in enumerate(list):
+            eq_(char[0], expect[i])
 
 
 class TestTrainingMachine(object):
@@ -20,8 +28,8 @@ class TestTrainingMachine(object):
             eq_(self.ctx[i].char, c)
             eq_(self.ctx[i].hit, False)
             eq_(self.ctx[i].miss, True)
-            eq_(self.ctx[i].input, [])
-            eq_(self.ctx[i].typos, [])
+            check_char_list(self.ctx[i].input, [])
+            check_char_list(self.ctx[i].typos, [])
 
     def test_pause(self):
         # pause and check inner state change
@@ -40,8 +48,8 @@ class TestTrainingMachine(object):
         eq_(self.ctx._state_fn, _state_input)
         eq_(self.ctx[0].hit, True)
         eq_(self.ctx[0].miss, False)
-        eq_(self.ctx[0].input, [TEXT[0]])
-        eq_(self.ctx[0].typos, [])
+        check_char_list(self.ctx[0].input, [TEXT[0]])
+        check_char_list(self.ctx[0].typos, [])
         self.feedback_mock.assert_has_calls([call.on_hit(self.ctx, 0, TEXT[0])])
 
     def test_miss(self):
@@ -49,8 +57,8 @@ class TestTrainingMachine(object):
         eq_(self.ctx._state_fn, _state_input)
         eq_(self.ctx[0].hit, False)
         eq_(self.ctx[0].miss, True)
-        eq_(self.ctx[0].input, [TEXT[1]])
-        eq_(self.ctx[0].typos, [TEXT[1]])
+        check_char_list(self.ctx[0].input, [TEXT[1]])
+        check_char_list(self.ctx[0].typos, [TEXT[1]])
         self.feedback_mock.assert_has_calls([call.on_miss(self.ctx, 0, TEXT[1], TEXT[0])])
 
     def test_undo_miss(self):
@@ -60,13 +68,13 @@ class TestTrainingMachine(object):
 
         eq_(self.ctx[0].hit, True)
         eq_(self.ctx[0].miss, False)
-        eq_(self.ctx[0].input, [TEXT[0]])
-        eq_(self.ctx[0].typos, [])
+        check_char_list(self.ctx[0].input, [TEXT[0]])
+        check_char_list(self.ctx[0].typos, [])
 
         eq_(self.ctx[1].hit, False)
         eq_(self.ctx[1].miss, True)
-        eq_(self.ctx[1].input, [TEXT[2], '<UNDO>'])
-        eq_(self.ctx[1].typos, [TEXT[2]])
+        check_char_list(self.ctx[1].input, [TEXT[2], '<UNDO>'])
+        check_char_list(self.ctx[1].typos, [TEXT[2]])
 
         self.feedback_mock.assert_has_calls([
             call.on_hit(self.ctx, 0, TEXT[0]),
@@ -80,12 +88,12 @@ class TestTrainingMachine(object):
 
         eq_(self.ctx[0].hit, False)
         eq_(self.ctx[0].miss, True)
-        eq_(self.ctx[0].input, [TEXT[0], '<UNDO>'])
+        check_char_list(self.ctx[0].input, [TEXT[0], '<UNDO>'])
 
-        eq_(self.ctx[0].typos, [])
+        check_char_list(self.ctx[0].typos, [])
 
         self.ctx[0]._undo_typo = True
-        eq_(self.ctx[0].typos, ['<UNDO>'])
+        check_char_list(self.ctx[0].typos, ['<UNDO>'])
 
         self.feedback_mock.assert_has_calls([
             call.on_hit(self.ctx, 0, TEXT[0]),

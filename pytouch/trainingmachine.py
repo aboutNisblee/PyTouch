@@ -137,7 +137,7 @@ class Char(object):
 
 
 class TrainingContext(object):
-    def __init__(self, text, undo_typo=False, **kwargs):
+    def __init__(self, text, auto_unpause=False, undo_typo=False, **kwargs):
         """ Training machine context.
 
         A client should never manipulate internal attributes on its instance.
@@ -156,6 +156,8 @@ class TrainingContext(object):
         self._text = [Char(i, c, undo_typo) for i, c in enumerate(text)]
         self._pause = list()
         self._observers = []
+
+        self.auto_unpause = auto_unpause
         self.undo_typo = undo_typo
 
         self.__dict__.update(kwargs)
@@ -293,7 +295,7 @@ def _state_input(ctx, event):
 
 
 def _state_pause(ctx, event):
-    if event.type == 'unpause':
+    if event.type == 'unpause' or (event.type == 'input' and ctx.auto_unpause):
         ctx._state_fn = _state_input
         # Check for logical error
         if ctx._pause:
@@ -302,6 +304,9 @@ def _state_pause(ctx, event):
             else:
                 ctx._pause[-1] = (ctx._pause[-1][0], datetime.datetime.utcnow())
         _notify(ctx, 'on_unpause')
+        if event.type == 'input' and ctx.auto_unpause:
+            logger.info('Auto unpause')
+            _state_input(ctx, event)
 
 
 def _state_end(ctx, event):

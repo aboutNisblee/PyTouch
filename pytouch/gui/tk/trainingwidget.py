@@ -57,7 +57,7 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         # self.sb.grid(column=1, row=1, sticky=N + E + S + W)
 
     def load_lesson(self, lesson):
-        self.ctx = tm.TrainingContext.from_lesson(lesson)
+        self.ctx = tm.TrainingContext.from_lesson(lesson, auto_unpause=True)
         tm.add_observer(self.ctx, self)
 
         self.insert(index='1.0', chars=lesson.text)
@@ -146,8 +146,8 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         if event.keysym == 'Return':
             event.char = '\n'
 
-        if tm.is_paused(self.ctx):
-            tm.process_event(self.ctx, tm.Event.unpause_event())
+        # if tm.is_paused(self.ctx):
+        #     tm.process_event(self.ctx, tm.Event.unpause_event())
         if event.char and event.keysym not in FILTERED_KEYS:
             tm.process_event(self.ctx, tm.Event.input_event(self.idx, event.char))
 

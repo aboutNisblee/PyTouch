@@ -19,7 +19,7 @@ def check_char_list(list, expect):
 class TestTrainingMachine(object):
     def setup(self):
         self.feedback_mock = MagicMock()
-        self.ctx = TrainingContext(TEXT)
+        self.ctx = TrainingContext(TEXT, auto_unpause=True)
         add_observer(self.ctx, self.feedback_mock)
 
     def test_init(self):
@@ -32,6 +32,10 @@ class TestTrainingMachine(object):
             check_char_list(self.ctx[i].typos, [])
 
     def test_pause(self):
+        # First unpause since we are starting in pause state.
+        process_event(self.ctx, Event.unpause_event())
+        eq_(self.ctx._state_fn, _state_input)
+
         # pause and check inner state change
         process_event(self.ctx, Event.pause_event())
         eq_(self.ctx._state_fn, _state_pause)
@@ -41,7 +45,7 @@ class TestTrainingMachine(object):
         eq_(self.ctx._state_fn, _state_input)
 
         # check feedback
-        self.feedback_mock.assert_has_calls([call.on_pause(self.ctx), call.on_unpause(self.ctx)])
+        self.feedback_mock.assert_has_calls([call.on_unpause(self.ctx), call.on_pause(self.ctx), call.on_unpause(self.ctx)])
 
     def test_hit(self):
         process_event(self.ctx, Event.input_event(0, TEXT[0]))
@@ -112,7 +116,7 @@ class TestTrainingMachine(object):
         self.feedback_mock.assert_has_calls([call.on_end(self.ctx)])
 
     def test_no_text(self):
-        self.ctx = TrainingContext('')
+        self.ctx = TrainingContext('', auto_unpause=True)
         add_observer(self.ctx, self.feedback_mock)
 
         # Produce a miss at line end
@@ -127,7 +131,7 @@ class TestTrainingMachine(object):
         self.feedback_mock.assert_not_called()
 
     def test_newline(self):
-        self.ctx = TrainingContext('\n')
+        self.ctx = TrainingContext('\n', auto_unpause=True)
         add_observer(self.ctx, self.feedback_mock)
 
         process_event(self.ctx, Event.input_event(0, 'A'))

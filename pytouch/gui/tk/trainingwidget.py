@@ -28,10 +28,9 @@ FILTERED_KEYS = ('Cancel', 'Tab', 'Shift_L', 'Control_L', 'Alt_L', 'Pause', 'Cap
 # Linefeed: 'Return'
 
 class TrainingWidget(tm.TrainingMachineObserver, Text):
-    def __init__(self, master, lesson=None):
+    def __init__(self, master):
         super(TrainingWidget, self).__init__(master, wrap=NONE, exportselection=0, undo=False)
 
-        self.lesson = lesson
         self.ctx = None
 
         self.font = font.Font(family='mono', size=-40)
@@ -50,9 +49,6 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         self.bind('<Any-Button>', self.on_button)
         self.bind('<Motion>', lambda e: 'break')
 
-        if self.lesson:
-            self.load_lesson(self.lesson)
-
         # TODO: Move me to containing view
         # self.sb = Scrollbar(self, command=self.yview)
         # self['yscrollcommand'] = self.sb.set
@@ -60,13 +56,9 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         # self.grid(column=0, row=1, sticky=N + E + S + W)
         # self.sb.grid(column=1, row=1, sticky=N + E + S + W)
 
-    def load_lesson(self, lesson, observers=None):
-        self.lesson = lesson
+    def load_lesson(self, lesson):
         self.ctx = tm.TrainingContext.from_lesson(lesson)
         tm.add_observer(self.ctx, self)
-        if observers:  # FIXME DIRRTY
-            for o in observers:
-                tm.add_observer(self.ctx, o)
 
         self.insert(index='1.0', chars=lesson.text)
 
@@ -82,6 +74,8 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         self.focus_set()
         self.update_font_size(self.cget('width'))
 
+        return self.ctx
+
     @property
     def idx(self):
         chars = self.count('1.0', INSERT, 'chars')
@@ -93,7 +87,7 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
 
     def update_font_size(self, width):
         # It seems to be impossible to determine the width of the cursor therefore the 25 pixels extra width.
-        scale_factor = width / (self.font.measure(self.lesson.longest_line) + 25)
+        scale_factor = width / (self.font.measure(self.ctx.lesson.longest_line) + 25)
         new_font_size = min(floor(self.font.cget('size') * scale_factor), -1)
 
         if self.font.cget('size') != new_font_size:

@@ -28,16 +28,16 @@ class StatsWidget(TrainingMachineObserver, ttk.Frame):
         self._time_label.grid(column=0, row=0, sticky=N + S + W)
 
         self._after_id = None
-        self._history = list()
+        self._pause_history = list()
 
     def elapsed(self):
         rv = timedelta(0)
 
-        if not self._history:
+        if not self._pause_history:
             return rv
 
         # Make a deep copy of the history and add an artificial stop if we are still running
-        history = copy.deepcopy(self._history)
+        history = copy.deepcopy(self._pause_history)
         if history[-1][0] != 'stop':
             history.append(('stop', datetime.utcnow()))
 
@@ -62,7 +62,7 @@ class StatsWidget(TrainingMachineObserver, ttk.Frame):
         self._after_id = self.after(100, self._on_tick)
         t = datetime.utcnow()
         logger.debug('Starting timer at {}'.format(t.isoformat()))
-        self._history.append(('start', t))
+        self._pause_history.append(('start', t))
 
     def on_pause(self, ctx):
         if self._after_id is None:
@@ -72,22 +72,22 @@ class StatsWidget(TrainingMachineObserver, ttk.Frame):
         self._after_id = None
         t = datetime.utcnow()
         logger.debug('Stopped timer at {}'.format(t.isoformat()))
-        self._history.append(('stop', t))
+        self._pause_history.append(('stop', t))
 
     def on_restart(self, ctx):
-        self._history.clear()
+        self._pause_history.clear()
         self.after_cancel(self._after_id)
         self._after_id = None
-
-    def on_miss(self, ctx, index, typed, expected):
-        pass
-
-    def on_undo(self, ctx, index, expect):
-        pass
 
     def on_end(self, ctx):
         self.after_cancel(self._after_id)
         self._after_id = None
 
     def on_hit(self, ctx, index, typed):
+        pass
+
+    def on_miss(self, ctx, index, typed, expected):
+        pass
+
+    def on_undo(self, ctx, index, expect):
         pass

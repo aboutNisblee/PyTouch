@@ -137,10 +137,12 @@ class Char(object):
 
 
 class TrainingContext(object):
-    def __init__(self, text, undo_typo=False):
+    def __init__(self, text, undo_typo=False, **kwargs):
         """ Training machine context.
 
         A client should never manipulate internal attributes on its instance.
+
+        Additional kwargs are added to the instance dict and can later be accessed as attributes.
 
         :param text: The lesson text.
         :param undo_typo: If enabled wrong undos count as typos.
@@ -156,16 +158,18 @@ class TrainingContext(object):
         self._observers = []
         self.undo_typo = undo_typo
 
+        self.__dict__.update(kwargs)
+
     @classmethod
-    def from_lesson(cls, lesson, *args, **kwargs):
+    def from_lesson(cls, lesson, **kwargs):
         """ Create a :class:`TrainingContext` from the given :class:`Lesson`.
 
-        Additional arguments are passed to the context.
+        Additional arguments are passed to the context. The lesson is appended to the context.
 
         :param lesson: A :class:`Lesson`.
         :return: An instance of :class:`TrainingContext`.
         """
-        return cls(lesson.text, *args, **kwargs)
+        return cls(lesson.text, lesson=lesson, **kwargs)
 
     def __getitem__(self, idx):
         return self._text[idx]

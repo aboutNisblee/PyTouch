@@ -28,7 +28,7 @@ FILTERED_KEYS = ('Cancel', 'Tab', 'Shift_L', 'Control_L', 'Alt_L', 'Pause', 'Cap
 # Linefeed: 'Return'
 
 class TrainingWidget(tm.TrainingMachineObserver, Text):
-    def __init__(self, master, lesson):
+    def __init__(self, master, lesson=None):
         super(TrainingWidget, self).__init__(master, wrap=NONE, exportselection=0, undo=False)
 
         self.lesson = lesson
@@ -50,7 +50,8 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         self.bind('<Any-Button>', self.on_button)
         self.bind('<Motion>', lambda e: 'break')
 
-        self.load_lesson(self.lesson)
+        if self.lesson:
+            self.load_lesson(self.lesson)
 
         # TODO: Move me to containing view
         # self.sb = Scrollbar(self, command=self.yview)
@@ -59,9 +60,13 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         # self.grid(column=0, row=1, sticky=N + E + S + W)
         # self.sb.grid(column=1, row=1, sticky=N + E + S + W)
 
-    def load_lesson(self, lesson):
+    def load_lesson(self, lesson, observers=None):
+        self.lesson = lesson
         self.ctx = tm.TrainingContext.from_lesson(lesson)
         tm.add_observer(self.ctx, self)
+        if observers:  # FIXME DIRRTY
+            for o in observers:
+                tm.add_observer(self.ctx, o)
 
         self.insert(index='1.0', chars=lesson.text)
 
@@ -115,7 +120,8 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
 
     def on_focus_out(self, event):
         """ Pause TrainingMachine on focus out event. """
-        tm.process_event(self.ctx, tm.Event.pause_event())
+        # tm.process_event(self.ctx, tm.Event.pause_event())
+        pass
 
     def on_escape_press(self, event):
         """ Pause and show dialog on ESC. """

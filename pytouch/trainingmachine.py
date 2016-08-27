@@ -150,7 +150,7 @@ class TrainingContext(object):
         if not text.endswith('\n'):
             text += '\n'
 
-        self._state_fn = _state_input
+        self._state_fn = _state_pause
         self._text = [Char(i, c, undo_typo) for i, c in enumerate(text)]
         self._pause = list()
         self._observers = []
@@ -200,6 +200,7 @@ def process_event(ctx, event):
     :param ctx: A :class:`TrainingContext`.
     :param event: An event.
     """
+    logger.debug('processing event: {}'.format(event))
     ctx._state_fn(ctx, event)
 
 
@@ -244,7 +245,7 @@ def _notify(ctx, method, *args, **kwargs):
 
 
 def _reset(ctx):
-    ctx._state_fn = _state_input
+    ctx._state_fn = _state_pause
     for char in ctx:
         char.input.clear()
 
@@ -291,9 +292,11 @@ def _state_pause(ctx, event):
     if event.type == 'unpause':
         ctx._state_fn = _state_input
         # Check for logical error
-        if ctx._pause and ctx._pause[-1][1] is not None:
-            logger.error('Unpause event without preceding pause event')
-        ctx._pause[-1] = (ctx._pause[-1][0], datetime.datetime.utcnow())
+        if ctx._pause:
+            if ctx._pause[-1][1] is not None:
+                logger.error('Unpause event without preceding pause event')
+            else:
+                ctx._pause[-1] = (ctx._pause[-1][0], datetime.datetime.utcnow())
         _notify(ctx, 'on_unpause')
 
 

@@ -15,7 +15,7 @@ class StatsWidget(TrainingMachineObserver, ttk.Frame):
     def __init__(self, master, **kwargs):
         super().__init__(master=master, **kwargs)
 
-        self.columnconfigure(0, weight=1)
+        self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
 
         self.configure(width=400, height=30)
@@ -23,12 +23,22 @@ class StatsWidget(TrainingMachineObserver, ttk.Frame):
         self.font = font.Font(family='mono', size=-40)
 
         self._time_string = StringVar(value='00:00.0')
-        self._time_label = Label(self, textvariable=self._time_string, font=self.font)
-
-        self._time_label.grid(column=0, row=0, sticky=N + S + W)
+        self._time_label = ttk.Label(self, textvariable=self._time_string, font=self.font)
+        self._time_label.grid(column=0, row=0, sticky=N + S + W, padx=5, pady=5)
 
         self._after_id = None
         self._pause_history = list()
+
+        self.miss_count = 0
+        self.hit_count = 0
+
+        self._hitrate_string = StringVar(value='0 %')
+        self._hitrate_label = ttk.Label(self, textvariable=self._hitrate_string, font=self.font, anchor=CENTER)
+        self._hitrate_label.grid(column=1, row=0, sticky=N + S + W + E, padx=5, pady=5)
+
+        self._miss_string = StringVar(value='0')
+        self._miss_label = ttk.Label(self, textvariable=self._miss_string, font=self.font)
+        self._miss_label.grid(column=2, row=0, sticky=N + S + E, padx=5, pady=5)
 
     def elapsed(self):
         rv = timedelta(0)
@@ -78,16 +88,25 @@ class StatsWidget(TrainingMachineObserver, ttk.Frame):
         self._pause_history.clear()
         self.after_cancel(self._after_id)
         self._after_id = None
+        self._time_string.set('00:00.0')
+        self.miss_count = 0
+        self.hit_count = 0
+        self._miss_string.set(self.miss_count)
+        self._hitrate_string.set('0 %')
 
     def on_end(self, ctx):
         self.after_cancel(self._after_id)
         self._after_id = None
+        self._hitrate_string.set('{:.0%}'.format(self.hit_count / (self.hit_count + self.miss_count)))
 
     def on_hit(self, ctx, index, typed):
-        pass
+        self.hit_count += 1
+        self._hitrate_string.set('{:.0%}'.format(self.hit_count / (self.hit_count + self.miss_count)))
 
     def on_miss(self, ctx, index, typed, expected):
-        pass
+        self.miss_count += 1
+        self._miss_string.set(self.miss_count)
+        self._hitrate_string.set('{:.0%}'.format(self.hit_count / (self.hit_count + self.miss_count)))
 
     def on_undo(self, ctx, index, expect):
         pass

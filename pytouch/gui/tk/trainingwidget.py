@@ -49,13 +49,6 @@ class TrainingWidget(tm.TrainingMachineObserver, Text):
         self.bind('<Any-Button>', self.on_button)
         self.bind('<Motion>', lambda e: 'break')
 
-        # TODO: Move me to containing view
-        # self.sb = Scrollbar(self, command=self.yview)
-        # self['yscrollcommand'] = self.sb.set
-        # Add widgets to grid
-        # self.grid(column=0, row=1, sticky=N + E + S + W)
-        # self.sb.grid(column=1, row=1, sticky=N + E + S + W)
-
     def load_lesson(self, lesson):
         self.ctx = tm.TrainingContext.from_lesson(lesson, auto_unpause=True)
         tm.add_observer(self.ctx, self)

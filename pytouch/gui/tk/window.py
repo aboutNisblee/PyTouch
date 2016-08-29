@@ -20,15 +20,20 @@ class MainWindow(ttk.Frame):
         top.rowconfigure(0, weight=1)
         top.columnconfigure(0, weight=1)
 
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
-
-        self.configure(width=400, height=300)
-
-        self.test_lesson = CourseService.find_lesson('{d6e5a9a9-3c31-4175-8d58-245695c60b08}')
         self.training_view = TrainingView(self)
         self.training_view.grid(column=0, row=0, sticky=N + E + S + W)
 
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self.style = ttk.Style()
+        if 'clam' in self.style.theme_names():
+            self.style.theme_use('clam')
+
     def show(self):
-        self.training_view.show(self.test_lesson)
+        self.training_view.show(CourseService.find_lesson('{d6e5a9a9-3c31-4175-8d58-245695c60b08}'))
+
+        self.master.update()
+        self.master.minsize(self.master.winfo_width(), self.master.winfo_height())
+
         self.master.mainloop()

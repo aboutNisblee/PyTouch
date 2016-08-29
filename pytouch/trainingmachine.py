@@ -224,6 +224,20 @@ def _inputs(ctx):
             yield input
 
 
+def strokes(ctx):
+    return len([i for i in _inputs(ctx) if i[0] != '<UNDO>'])
+
+
+def hits(ctx):
+    return len([c for c in ctx if c.hit])
+
+
+def progress(ctx):
+    rv = hits(ctx) / len(ctx._text)
+    logger.debug('progress {}'.format(rv))
+    return rv
+
+
 def runtime(ctx):
     """ Get the overall runtime.
 

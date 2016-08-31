@@ -4,7 +4,7 @@ from tkinter import *
 from tkinter import ttk
 
 from pytouch.service import CourseService
-from pytouch.gui.tk.trainingview import TrainingView
+from pytouch.gui.tk.trainingwidget import TrainingWidget
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +20,13 @@ class MainWindow(ttk.Frame):
         top.rowconfigure(0, weight=1)
         top.columnconfigure(0, weight=1)
 
-        self.training_view = TrainingView(self)
-        self.training_view.grid(column=0, row=0, sticky=N + E + S + W)
+        top.wm_title('PyTouch Typing Tutor')
+        top.wm_iconname('PyTouch')
+        # TODO: Add icon image
+        # top.wm_iconphoto()
+
+        self.training_widget = TrainingWidget(self)
+        self.training_widget.grid(column=0, row=0, sticky=N + E + S + W)
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
@@ -31,7 +36,7 @@ class MainWindow(ttk.Frame):
             self.style.theme_use('clam')
 
     def show(self):
-        self.training_view.show(CourseService.find_lesson('{d6e5a9a9-3c31-4175-8d58-245695c60b08}'))
+        self.training_widget.load_lesson(CourseService.find_lesson('{d6e5a9a9-3c31-4175-8d58-245695c60b08}'))
 
         self.master.update()
         self.master.minsize(self.master.winfo_width(), self.master.winfo_height())

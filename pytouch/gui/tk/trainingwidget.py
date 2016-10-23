@@ -77,19 +77,28 @@ class PauseDialog(ttk.Frame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
-        self.lb_title = ttk.Label(self, text='Lesson paused')
+        self.content_frame = ttk.Frame(self)
+        self.lb_title = ttk.Label(self.content_frame, text='Lesson paused')
+        self.button_frame = ttk.Frame(self.content_frame)
+        self.bt_continue = ttk.Button(self.button_frame, text='Continue', default='active', command=self.on_continue)
+        self.bt_restart = ttk.Button(self.button_frame, text='Restart')
+        self.bt_abort = ttk.Button(self.button_frame, text='Abort')
 
-        self.bt_continue = ttk.Button(self, text='Continue', default='active', command=self.on_continue)
-        self.bt_restart = ttk.Button(self, text='Restart')
-        self.bt_abort = ttk.Button(self, text='Abort')
+        self.content_frame.grid(column=0, row=0)
+        self.lb_title.grid(column=0, row=0, pady=3)
+        self.button_frame.grid(column=0, row=1, pady=10)
+        self.bt_continue.grid(column=0, row=1, pady=3)
+        self.bt_restart.grid(column=0, row=2, pady=3)
+        self.bt_abort.grid(column=0, row=3, pady=3)
 
-        self.lb_title.grid(column=0, row=0)
-        self.bt_continue.grid(column=0, row=1)
-        self.bt_restart.grid(column=0, row=2)
-        self.bt_abort.grid(column=0, row=3)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self.focus_set()
 
     def on_continue(self):
         logger.debug('on_continue')
+        self.master.focus_set()
         self.destroy()
 
 
@@ -98,14 +107,14 @@ class TrainingWidget(TrainingMachineObserver, Text):
         super(TrainingWidget, self).__init__(master)
 
         self.tm = None
-        self._after_id = None
+        self._tick_id = None
 
         # text and scrollbar widget
         self._font = font.Font(family='mono', size=-40)
 
-        self._text_frame = Frame(self)
-        self._text = Text(self._text_frame, wrap=NONE, exportselection=0, undo=False)
-        self._scrollbar = ttk.Scrollbar(self._text_frame, command=self._text.yview)
+        self._content_frame = Frame(self)
+        self._text = Text(self._content_frame, wrap=NONE, exportselection=0, undo=False)
+        self._scrollbar = ttk.Scrollbar(self._content_frame, command=self._text.yview)
         # Connect scrollbar and training widget
         self._text['yscrollcommand'] = self._scrollbar.set
 
@@ -134,7 +143,7 @@ class TrainingWidget(TrainingMachineObserver, Text):
         self._strokes_elem.grid(column=1, row=0, sticky=N + S + W + E)
         self._accuracy_elem.grid(column=2, row=0, sticky=N + S + W + E)
         self._progressbar.grid(column=0, row=1, sticky=N + S + W + E, columnspan=3)
-        self._text_frame.grid(column=0, row=2, sticky=N + S + W + E, columnspan=3)
+        self._content_frame.grid(column=0, row=2, sticky=N + S + W + E, columnspan=3)
 
         self.columnconfigure(0, weight=1, minsize=self._time_elem.text_width)
         self.columnconfigure(1, weight=1, minsize=self._strokes_elem.text_width)
@@ -145,8 +154,13 @@ class TrainingWidget(TrainingMachineObserver, Text):
         self._text.grid(column=0, row=0, sticky=N + E + S + W)
         self._scrollbar.grid(column=1, row=0, sticky=N + E + S + W)
 
-        self._text_frame.columnconfigure(0, weight=1, minsize=400)
-        self._text_frame.rowconfigure(0, weight=1)
+        self._content_frame.columnconfigure(0, weight=1, minsize=400)
+        self._content_frame.rowconfigure(0, weight=1)
+
+    def _show_pause_dialog(self):
+        self._pause_dialog = PauseDialog(self._content_frame)
+        self._pause_dialog.grid(column=0, row=0, sticky=N + S + W + E, columnspan=2)
+        # self._pause_dialog.lift()
 
     def load_lesson(self, lesson):
         self.tm = TrainingMachine.from_lesson(lesson, auto_unpause=True)
@@ -164,7 +178,7 @@ class TrainingWidget(TrainingMachineObserver, Text):
         # self.text_widget.tag_bind('untyped')  # Use it to bind event
 
         self._text.focus_set()
-        self.update_font_size(self._text.cget('width'))
+        self._update_font_size(self._text.cget('width'))
 
         return self.tm
 
@@ -173,11 +187,11 @@ class TrainingWidget(TrainingMachineObserver, Text):
         chars = self._text.count('1.0', INSERT, 'chars')
         return chars[0] if chars else 0
 
-    def replace_char(self, index, char, tags):
+    def _replace_char(self, index, char, tags):
         """ Replace a char at the given text index. """
         self._text.replace('1.0+{}c'.format(index), '1.0+{}c'.format(index + 1), char, tags)
 
-    def update_font_size(self, width):
+    def _update_font_size(self, width):
         # It seems to be impossible to determine the width of the cursor therefore the 25 pixels extra width.
         scale_factor = width / (self._font.measure(self.tm.lesson.longest_line) + 25)
         new_font_size = min(floor(self._font.cget('size') * scale_factor), -1)
@@ -194,7 +208,7 @@ class TrainingWidget(TrainingMachineObserver, Text):
             pad = event.width * 0.03
             width = event.width - 2 * pad
 
-            self.update_font_size(width)
+            self._update_font_size(width)
             self._text.configure(padx=pad, pady=pad)
 
     def on_button(self, event):
@@ -243,7 +257,7 @@ class TrainingWidget(TrainingMachineObserver, Text):
         return 'break'
 
     def _on_tick(self):
-        self._after_id = self.after(100, self._on_tick)
+        self._tick_id = self.after(100, self._on_tick)
 
         elapsed_seconds = timedelta.total_seconds(self.tm.elapsed())
         minutes, seconds = divmod(elapsed_seconds, 60)
@@ -254,7 +268,7 @@ class TrainingWidget(TrainingMachineObserver, Text):
     def on_hit(self, sender, index, typed):
         """ TrainingMachine hit handler. """
         logger.debug('on_hit: insert {!r} at {}'.format(typed, index))
-        self.replace_char(index, typed, ('base', 'hit'))
+        self._replace_char(index, typed, ('base', 'hit'))
 
         self._accuracy_elem.main = '{:.1%}'.format(self.tm.hits / self.tm.keystrokes)
         self._progressbar.configure(value=self.tm.progress * 100)
@@ -264,7 +278,7 @@ class TrainingWidget(TrainingMachineObserver, Text):
         if typed != '<UNDO>':
             if typed != '\n':  # Do not output wrong linefeeds
                 logger.debug('on_miss: typed {!r} expected {!r} at {}'.format(typed, expected, index))
-                self.replace_char(index, typed, ('base', 'miss'))
+                self._replace_char(index, typed, ('base', 'miss'))
         else:
             # TODO: Consequences?
             logger.debug('on_miss: typed {!r} expected {!r} at {}'.format(typed, expected, index))
@@ -276,7 +290,7 @@ class TrainingWidget(TrainingMachineObserver, Text):
     def on_undo(self, sender, index, expect):
         """ TrainingMachine undo handler. """
         logger.debug('on_undo: undo at {} expecting {!r}'.format(index, expect))
-        self.replace_char(index, expect, ('base', 'untyped'))
+        self._replace_char(index, expect, ('base', 'untyped'))
         self._text.mark_set(INSERT, '1.0+{}c'.format(index))
 
         self._accuracy_elem.main = '{:.1%}'.format(self.tm.hits / self.tm.keystrokes)
@@ -286,27 +300,29 @@ class TrainingWidget(TrainingMachineObserver, Text):
         """ TrainingMachine pause handler. """
         logger.debug('on_pause: ...')
 
-        if self._after_id is None:
+        if self._tick_id is None:
             logger.warning('Timer not running')
             return
-        self.after_cancel(self._after_id)
-        self._after_id = None
+        self.after_cancel(self._tick_id)
+        self._tick_id = None
+
+        self.after(0, self._show_pause_dialog)
 
     def on_unpause(self, sender):
         """ TrainingMachine unpause handler. """
         logger.debug('on_unpause: ...')
 
-        if self._after_id is not None:
+        if self._tick_id is not None:
             logger.warning('Timer already running')
             return
-        self._after_id = self.after(100, self._on_tick)
+        self._tick_id = self.after(100, self._on_tick)
 
     def on_restart(self, sender):
         """ TrainingMachine restart handler. """
         logger.debug('on_restart: ...')
 
-        self.after_cancel(self._after_id)
-        self._after_id = None
+        self.after_cancel(self._tick_id)
+        self._tick_id = None
 
         self._time_elem.main = ZERO
         self._strokes_elem.main = '0'
@@ -317,8 +333,8 @@ class TrainingWidget(TrainingMachineObserver, Text):
         """ TrainingMachine end handler. """
         logger.debug('on_end: End reached')
 
-        self.after_cancel(self._after_id)
-        self._after_id = None
+        self.after_cancel(self._tick_id)
+        self._tick_id = None
 
         self._accuracy_elem.main = '{:.1%}'.format(self.tm.hits / self.tm.keystrokes)
         self._progressbar.configure(value=self.tm.progress * 100)

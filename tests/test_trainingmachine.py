@@ -36,22 +36,27 @@ class TestTrainingMachine(object):
         self.uut.process_event(Event.unpause_event())
         eq_(self.uut._state_fn, self.uut._state_input)
         eq_(self.uut._pause_history[-1].action, 'start')
-        assert_almost_equal(self.uut._pause_history[-1].time, datetime.utcnow(), delta=timedelta(milliseconds=1))
+        assert_almost_equal(self.uut._pause_history[-1].time,
+                            datetime.utcnow(), delta=timedelta(milliseconds=5))
 
         # pause and check inner state change
         self.uut.process_event(Event.pause_event())
         eq_(self.uut._state_fn, self.uut._state_pause)
         eq_(self.uut._pause_history[-1].action, 'pause')
-        assert_almost_equal(self.uut._pause_history[-1].time, datetime.utcnow(), delta=timedelta(milliseconds=1))
+        assert_almost_equal(self.uut._pause_history[-1].time,
+                            datetime.utcnow(), delta=timedelta(milliseconds=5))
 
         # unpause and check inner state change
         self.uut.process_event(Event.unpause_event())
         eq_(self.uut._state_fn, self.uut._state_input)
         eq_(self.uut._pause_history[-1].action, 'unpause')
-        assert_almost_equal(self.uut._pause_history[-1].time, datetime.utcnow(), delta=timedelta(milliseconds=1))
+        assert_almost_equal(self.uut._pause_history[-1].time,
+                            datetime.utcnow(), delta=timedelta(milliseconds=5))
 
         # check feedback
-        self.feedback_mock.assert_has_calls([call.on_unpause(self.uut), call.on_pause(self.uut), call.on_unpause(self.uut)])
+        self.feedback_mock.assert_has_calls(
+            [call.on_unpause(self.uut), call.on_pause(self.uut),
+             call.on_unpause(self.uut)])
 
     def test_hit(self):
         self.uut.process_event(Event.input_event(0, TEXT[0]))

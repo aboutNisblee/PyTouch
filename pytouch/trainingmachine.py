@@ -1,15 +1,18 @@
+import copy
 import logging
+from datetime import datetime, timedelta
+
+from collections import namedtuple
+
+from blinker import Signal
 
 __all__ = [
     'Event',
     'TrainingMachineObserver',
-    'TrainingContext',
-    'add_observer',
-    'remove_observer',
-    'process_event',
-    'is_paused',
-    'is_running',
+    'TrainingMachine',
 ]
+
+logger = logging.getLogger(__name__)
 
 
 class Event(dict):
@@ -62,38 +65,49 @@ class TrainingMachineObserver(object):
     A client should implement this interface to get feedback from the machine.
     """
 
-    def on_pause(self, ctx):
+    def on_pause(self, sender):
         raise NotImplementedError
 
-    def on_unpause(self, ctx):
+    def on_unpause(self, sender):
         raise NotImplementedError
 
-    def on_hit(self, ctx, index, typed):
+    def on_hit(self, sender, index, typed):
         raise NotImplementedError
 
-    def on_miss(self, ctx, index, typed, expected):
+    def on_miss(self, sender, index, typed, expected):
         raise NotImplementedError
 
-    def on_undo(self, ctx, index, expect):
+    def on_undo(self, sender, index, expect):
         """ Called after a successful undo event.
-        :param ctx: The context.
+        :param sender: The sending machine.
         :param index: The index that should be replaced by the expect argument.
         :param expect: The expected character.
         """
         raise NotImplementedError
 
-    def on_end(self, ctx):
+    def on_end(self, sender):
         raise NotImplementedError
 
-    def on_restart(self, ctx):
+    def on_restart(self, sender):
         raise NotImplementedError
 
 
 class Char(object):
+    KeyStroke = namedtuple('KeyStroke', ['char', 'time'])
+
     def __init__(self, idx, char, undo_typo):
+        """ Internal representation of a character in the text of a lesson.
+
+        An additional list of all key strokes at this index is maintained.
+
+
+        :param idx: The absolute index in the text starting at 0.
+        :param char: The utf-8 character in the text.
+        :param undo_typo: Should undos (<UNDO>) counts as typos.
+        """
         self._idx = idx
         self._char = char
-        self._input = list()
+        self._keystrokes = list()
         self._undo_typo = undo_typo
 
     @property
@@ -106,150 +120,225 @@ class Char(object):
 
     @property
     def hit(self):
-        return self._input[-1] == self._char if self._input else False
+        """ Is the last recorded key stroke a hit?
+        :return: True on hit, else False.
+        """
+        return self._keystrokes[-1].char == self._char if self._keystrokes else False
 
     @property
     def miss(self):
+        """ Is the last recorded key stroke a miss?
+        :return: True on miss, else False.
+        """
         return not self.hit
 
     @property
-    def input(self):
-        return self._input
+    def keystrokes(self):
+        return self._keystrokes
 
     @property
     def typos(self):
-        return [c for c in self._input if (c != '<UNDO>' and c != self._char) or (c == '<UNDO>' and self._undo_typo)]
+        return [ks for ks in self._keystrokes if (ks.char != '<UNDO>' and ks.char != self._char) or (ks.char == '<UNDO>' and self._undo_typo)]
 
-        # def add(self, char):
-        #     self._input.append(char)
-        #     return char == self._char
+    def append(self, char, elapsed):
+        self._keystrokes.append(Char.KeyStroke(char, elapsed))
+
+    def __getitem__(self, item):
+        return self._keystrokes[item].char
+
+    def __iter__(self):
+        for ks in self._keystrokes:
+            yield ks
 
 
-class TrainingContext(object):
-    def __init__(self, text, undo_typo=False):
-        """ Training machine context.
+class TrainingMachine(object):
+    PauseEntry = namedtuple('PauseEntry', ['action', 'time'])
+
+    def __init__(self, text, auto_unpause=False, undo_typo=False, **kwargs):
+        """ Training machine.
 
         A client should never manipulate internal attributes on its instance.
 
+        Additional kwargs are added to the instance dict and can later be accessed as attributes.
+
+        Note that the logic is currently initialized with paused state. In case auto_unpause is False
+        the logic must first be unpaused by passing an unpause event to start the state machine.
+        If auto_unpause is True, the machine automatically switches state to input on first input event.
+        In either case an on_unpause callback is made that the gui can use to detect the start of the training
+        session.
+
         :param text: The lesson text.
         :param undo_typo: If enabled wrong undos count as typos.
+        :param auto_unpause: True to enable the auto transition from pause to input on input event.
         """
 
         # Ensure the text ends with NL
         if not text.endswith('\n'):
             text += '\n'
 
-        self._state_fn = _state_input
+        self._state_fn = self._state_pause
         self._text = [Char(i, c, undo_typo) for i, c in enumerate(text)]
-        self._observers = []
+        self._pause_history = list()
+        self._observers = list()
+
+        self.auto_unpause = auto_unpause
         self.undo_typo = undo_typo
 
-    @classmethod
-    def from_lesson(cls, lesson, *args, **kwargs):
-        """ Create a :class:`TrainingContext` from the given :class:`Lesson`.
+        self.__dict__.update(kwargs)
 
-        Additional arguments are passed to the context.
+    @classmethod
+    def from_lesson(cls, lesson, **kwargs):
+        """ Create a :class:`TrainingMachine` from the given :class:`Lesson`.
+
+        Additional arguments are passed to the context. The lesson is appended to the context.
 
         :param lesson: A :class:`Lesson`.
-        :return: An instance of :class:`TrainingContext`.
+        :return: An instance of :class:`TrainingMachine`.
         """
-        return cls(lesson.text, *args, **kwargs)
+        return cls(lesson.text, lesson=lesson, **kwargs)
 
-    def __getitem__(self, idx):
-        return self._text[idx]
+    def add_observer(self, observer):
+        """ Add an observer to the given machine.
 
+        :param observer: An object implementing the :class:`TrainingMachineObserver` interface.
+        """
+        if observer not in self._observers:
+            self._observers.append(observer)
 
-def add_observer(ctx, observer):
-    """ Add an observer to the given context.
+    def remove_observer(self, observer):
+        """ Remove an observer from the given machine.
 
-    :param ctx: A context.
-    :param observer: An object implementing the :class:`TrainingMachineObserver` interface.
-    """
-    if observer not in ctx._observers:
-        ctx._observers.append(observer)
+        :param observer: An object implementing the :class:`TrainingMachineObserver` interface.
+        """
+        self._observers.remove(observer)
 
+    def process_event(self, event):
+        """ Process external event.
 
-def remove_observer(ctx, observer):
-    """ Remove an observer from the given context.
+        :param event: An event.
+        """
+        logger.debug('processing event: {}'.format(event))
+        self._state_fn(event)
 
-    :param ctx: A context.
-    :param observer: An object implementing the :class:`TrainingMachineObserver` interface.
-    """
-    ctx._observers.remove(observer)
+    @property
+    def paused(self):
+        return self._state_fn is self._state_pause
 
+    @property
+    def running(self):
+        return not self.paused and self._state_fn is not self._state_end
 
-def process_event(ctx, event):
-    """ Process external event.
+    def _keystrokes(self):
+        for char in self._text:
+            for ks in char:
+                yield ks
 
-    :param ctx: A :class:`TrainingContext`.
-    :param event: An event.
-    """
-    ctx._state_fn(ctx, event)
+    @property
+    def keystrokes(self):
+        return len([ks for ks in self._keystrokes() if ks.char != '<UNDO>'])
 
+    @property
+    def hits(self):
+        return len([char for char in self._text if char.hit])
 
-def is_paused(ctx):
-    return ctx._state_fn is _state_pause
+    @property
+    def progress(self):
+        rv = self.hits / len(self._text)
+        return rv
 
+    def elapsed(self):
+        """ Get the overall runtime.
 
-def is_running(ctx):
-    return not is_paused(ctx) and ctx._state_fn is not _state_end
+        :return: The runtime as :class:`datetime.timedelta`
+        """
 
+        if not self._pause_history:
+            return timedelta(0)
 
-def _notify(ctx, method, *args, **kwargs):
-    for observer in ctx._observers:
-        getattr(observer, method)(ctx, *args, **kwargs)
+        # Sort all inputs by input time
+        # keystrokes = sorted(self._keystrokes(), key=lambda ks: ks.time)
 
+        overall = datetime.utcnow() - self._pause_history[0].time
 
-def _reset(ctx):
-    ctx._state_fn = _state_input
-    for c in ctx._text:
-        c.input.clear()
+        pause_time = timedelta(0)
 
+        # make a deep copy of the pause history
+        history = copy.deepcopy(self._pause_history)
+        # pop last event if we are still running or just started
+        if history[-1].action in ['start', 'unpause']:
+            history.pop()
 
-def _state_input(ctx, event):
-    if event.type == 'pause':
-        ctx._state_fn = _state_pause
-        _notify(ctx, 'on_pause')
+        def pairs(iterable):
+            it = iter(iterable)
+            return zip(it, it)
 
-    elif event.type == 'undo':
-        if event.index > 0:
-            ctx[event.index - 1].input.append('<UNDO>')
+        for start, stop in pairs(history):
+            pause_time += (stop.time - start.time)
 
-            # report wrong undos if desired
-            if ctx.undo_typo:
-                _notify(ctx, 'on_miss', event.index - 1, '<UNDO>', ctx[event.index - 1].char)
+        return overall - pause_time
 
-            _notify(ctx, 'on_undo', event.index - 1, ctx[event.index - 1].char)
+    def _notify(self, method, *args, **kwargs):
+        for observer in self._observers:
+            getattr(observer, method)(self, *args, **kwargs)
 
-    elif event.type == 'input':
-        # Note that this may produce an IndexError. Let it happen! It's a bug in the caller.
-        if ctx[event.index].char == event.char:  # hit
-            ctx[event.index].input.append(event.char)
-            _notify(ctx, 'on_hit', event.index, event.char)
+    def _reset(self):
+        self._state_fn = self._state_pause
+        for char in self._text:
+            char.keystrokes.clear()
 
-            if event.index == ctx[-1].index:
-                ctx._state_fn = _state_end
-                _notify(ctx, 'on_end')
+    def _state_input(self, event):
+        if event.type == 'pause':
+            self._state_fn = self._state_pause
+            self._pause_history.append(TrainingMachine.PauseEntry('pause', datetime.utcnow()))
+            self._notify('on_pause')
 
-        else:  # miss
-            if ctx[event.index].char == '\n':  # misses at line ending
-                return  # TODO: Make misses on line ending configurable
+        elif event.type == 'undo':
+            if event.index > 0:
+                self._text[event.index - 1].append('<UNDO>', self.elapsed())
 
-            if event.char == '\n':  # 'Return' hits in line
-                # TODO: Make misses on wrong returns configurable
-                return
+                # report wrong undos if desired
+                if self.undo_typo:
+                    self._notify('on_miss', event.index - 1, '<UNDO>', self._text[event.index - 1].char)
 
-            ctx[event.index].input.append(event.char)
-            _notify(ctx, 'on_miss', event.index, event.char, ctx[event.index].char)
+                self._notify('on_undo', event.index - 1, self._text[event.index - 1].char)
 
+        elif event.type == 'input':
+            # Note that this may produce an IndexError. Let it happen! It's a bug in the caller.
+            if self._text[event.index].char == event.char:  # hit
+                self._text[event.index].append(event.char, self.elapsed())
+                self._notify('on_hit', event.index, event.char)
 
-def _state_pause(ctx, event):
-    if event.type == 'unpause':
-        ctx._state_fn = _state_input
-        _notify(ctx, 'on_unpause')
+                if event.index == self._text[-1].index:
+                    self._state_fn = self._state_end
+                    self._pause_history.append(TrainingMachine.PauseEntry('stop', datetime.utcnow()))
+                    self._notify('on_end')
 
+            else:  # miss
+                if self._text[event.index].char == '\n':  # misses at line ending
+                    return  # TODO: Make misses on line ending configurable
 
-def _state_end(ctx, event):
-    if event.type == 'restart':
-        _reset(ctx)
-        _notify(ctx, 'on_restart')
+                if event.char == '\n':  # 'Return' hits in line
+                    # TODO: Make misses on wrong returns configurable
+                    return
+
+                self._text[event.index].append(event.char, self.elapsed())
+                self._notify('on_miss', event.index, event.char, self._text[event.index].char)
+
+    def _state_pause(self, event):
+        if event.type == 'unpause' or (event.type == 'input' and self.auto_unpause):
+            self._state_fn = self._state_input
+            if self._pause_history:
+                # Only append start time if we've already had a pause event.
+                # Currently we're detecting the start view first keystroke time.
+                self._pause_history.append(TrainingMachine.PauseEntry('unpause', datetime.utcnow()))
+            else:
+                self._pause_history.append(TrainingMachine.PauseEntry('start', datetime.utcnow()))
+            self._notify('on_unpause')
+            if event.type == 'input' and self.auto_unpause:
+                # Auto transition to input state
+                self._state_input(event)
+
+    def _state_end(self, event):
+        if event.type == 'restart':
+            self._reset()
+            self._notify('on_restart')

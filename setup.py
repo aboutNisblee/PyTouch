@@ -19,6 +19,7 @@ setup(
     install_requires=[
         'SQLAlchemy',
         'lxml',
+        'blinker',
     ],
     tests_require=['coverage'],
     entry_points={

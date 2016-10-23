@@ -1,8 +1,6 @@
 import logging
 import argparse
 
-import sys
-
 from pytouch.model import get_engine, Session, reset_db
 from pytouch.gui.tk import window
 
